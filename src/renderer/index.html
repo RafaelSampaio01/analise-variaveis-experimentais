@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'">
+  <title>Análise de Variáveis Experimentais</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div id="splash" class="splash" aria-label="Inicializando Análise de Variáveis Experimentais">
+    <div class="splash-grid"></div>
+    <div class="splash-content">
+      <div class="splash-mark"><span></span><span></span><span></span><span></span></div>
+      <p>MODULAB · LABORATÓRIO DIGITAL</p>
+      <h1>Análise de Variáveis<br><strong>Experimentais</strong></h1>
+      <div class="loader"><i></i></div>
+      <small>Preparando ambiente de aquisição de dados</small>
+    </div>
+  </div>
+
+  <header>
+    <div class="brand">
+      <div class="brand-mark">AV</div>
+      <span>ANÁLISE DE VARIÁVEIS <small>EXPERIMENTAIS · aquisição de dados</small></span>
+    </div>
+    <div class="header-status">
+      <div class="palette-picker">
+        <label for="palette-select">Paleta</label>
+        <select id="palette-select" aria-label="Selecionar paleta de cores">
+          <option value="turquesa">Turquesa</option>
+          <option value="azul">Azul</option>
+          <option value="roxo">Roxo</option>
+          <option value="ambar">Âmbar</option>
+        </select>
+      </div>
+      <button id="manual-button" class="header-manual" type="button" title="Abrir manual em PDF">Manual</button>
+      <button id="app-update-button" class="header-update" type="button" title="Verificar atualização do software">Sistema v1.16.0</button>
+      <span id="firmware-chip" class="badge firmware-chip">Firmware —</span>
+      <span id="connection" class="badge disconnected">● Cabo desconectado</span>
+    </div>
+  </header>
+
+  <main>
+    <aside>
+      <section id="device-card" class="card auto-device-card">
+        <div class="section-head"><h2>Placa</h2><span id="device-dot" class="dot disconnected"></span></div>
+        <div class="device-summary">
+          <div class="device-icon">USB</div>
+          <div>
+            <strong id="device-title">Cabo USB desconectado</strong>
+            <p id="device-detail">Conecte o Arduino Uno ao computador. A conexão será realizada automaticamente.</p>
+          </div>
+        </div>
+        <div class="firmware-row">
+          <div><span class="mini-label">Firmware</span><strong id="firmware">—</strong></div>
+          <button id="firmware-update" class="ghost-accent" hidden>Atualizar firmware</button>
+        </div>
+      </section>
+
+      <section id="config-card" class="card config-card">
+        <div id="experiment-inline" class="experiment-inline experiment-inline-hidden" aria-hidden="true">
+          <select id="experiment" tabindex="-1"></select>
+          <span id="experiment-port">A0</span>
+          <strong id="experiment-title">Potenciômetro</strong>
+          <p id="experiment-description">Configuração base.</p>
+        </div>
+        <fieldset id="config-fields">
+          <label>Sensor<select id="sensor"></select></label>
+          <label>Porta de entrada<select id="input"></select></label>
+          <div class="pair">
+            <label>Condição<select id="comparison"><option value="0">Menor que (&lt;)</option><option value="1">Igual a (=)</option><option value="2">Maior que (&gt;)</option></select></label>
+            <label>Referência<input id="reference" value="3" inputmode="decimal"></label>
+          </div>
+          <label>Atuador<select id="actuator"><option value="0">LED</option><option value="1">Buzzer ativo</option><option value="2">Buzzer passivo</option></select></label>
+          <div class="pair">
+            <label>Porta de saída<select id="output"></select></label>
+            <label>Estado normal<select id="level"><option value="0">Desligado</option><option value="1">Ligado</option></select></label>
+          </div>
+        </fieldset>
+        <div id="condition-summary" class="condition-summary">
+          <span class="condition-symbol">IF</span>
+          <p id="condition-text">Configure a condição para visualizar a ação da saída.</p>
+        </div>
+        <p id="sensor-note" class="hint"></p>
+        <div class="config-footer">
+          <button id="reset-config">Restaurar experimento</button>
+          <span class="mini-status">Configuração enviada automaticamente à placa</span>
+        </div>
+        <progress id="config-progress" max="7" value="0" aria-label="Progresso do envio da configuração"></progress>
+        <button id="play" class="primary full hero-action" disabled>▶ Iniciar coleta</button>
+        <button id="pause" class="full" disabled>Ⅱ Pausar coleta</button>
+        <p id="board-status" class="hint">O software está procurando a placa automaticamente.</p>
+      </section>
+
+
+    </aside>
+
+    <article>
+      <div class="page-title">
+        <div>
+          <p class="eyebrow">EXPERIMENTE · MEÇA · DESCUBRA</p>
+          <h1>Laboratório de aquisição</h1>
+          <p class="subtitle">Configure o sensor e inicie a coleta. A conexão e a preparação da placa são automáticas.</p>
+        </div>
+        <div class="actions"><button id="open">Abrir dados</button><button id="save">Salvar CSV / TXT</button></div>
+      </div>
+
+      <div class="metrics">
+        <section class="card metric-card"><div class="metric-icon">↗</div><div><p>Valor atual</p><strong id="latest">—</strong><small id="reading-sensor">Aguardando coleta</small></div></section>
+        <section class="card metric-card"><div class="metric-icon">#</div><div><p>Amostras</p><strong id="count">0</strong><small>Aquisição contínua · 115200 baud</small></div></section>
+        <section class="card metric-card"><div class="metric-icon">●</div><div><p>Estado</p><strong id="run-state">Pronto</strong><small id="mode">Localizando a placa automaticamente</small></div></section>
+      </div>
+
+      <section class="card workspace" id="workspace">
+        <div class="toolbar">
+          <nav aria-label="Visualização">
+            <button class="tab active" data-view="live">Gráfico</button>
+            <button class="tab" data-view="table">Dados em tabela</button>
+            <button class="tab" data-view="analysis">Comparar arquivos</button>
+          </nav>
+          <div class="actions">
+            <button id="clear">↺ Reiniciar gráfico</button>
+          </div>
+        </div>
+
+        <div id="analysis-tools" hidden>
+          <button id="add-series">+ Adicionar CSV / TXT</button>
+          <button id="clear-series">Limpar comparação</button>
+          <span class="hint">Até 4 séries · eixo X por amostra</span>
+          <div id="legend"></div>
+        </div>
+
+        <div id="graph-panel">
+          <div class="chart-head">
+            <div>
+              <span class="mini-label">VISUALIZAÇÃO</span>
+              <strong id="chart-title">Série temporal</strong>
+            </div>
+            <div class="chart-actions">
+              <div id="zoom-controls" class="zoom-controls" aria-label="Controles de zoom do gráfico">
+                <span class="zoom-axis">X</span>
+                <button id="zoom-out" title="Afastar no eixo do tempo">−</button>
+                <button id="zoom-in" title="Aproximar no eixo do tempo">+</button>
+                <span class="zoom-axis">Y</span>
+                <button id="zoom-y-out" title="Afastar valores">−</button>
+                <button id="zoom-y-in" title="Aproximar valores">+</button>
+                <span id="zoom-label">300 · Y 1,0×</span>
+                <button id="zoom-reset" title="Voltar ao zoom padrão">Padrão</button>
+                <button id="zoom-fit" title="Exibir todos os dados">Ajustar</button>
+              </div>
+              <button id="fullscreen-graph" class="fullscreen-button" title="Preencher a tela com o gráfico" aria-pressed="false">⛶ Ampliar gráfico</button>
+            </div>
+          </div>
+          <div class="canvas-shell"><canvas id="chart" aria-label="Gráfico dos valores por amostra" role="img"></canvas><div class="chart-hint">Roda: zoom X · Shift + roda: zoom Y · Ctrl + roda: zoom da página · arraste: navegar · duplo clique: redefinir</div></div>
+          <div class="chart-options">
+            <label class="switch-line"><input id="markers" type="checkbox" checked><span></span> Pontos</label>
+            <label class="switch-line"><input id="labels" type="checkbox"><span></span> Valores</label>
+            <span id="chart-caption">Últimas 300 amostras · todos os dados são preservados na exportação</span>
+            <button id="export-image">Exportar PNG</button>
+          </div>
+        </div>
+
+        <div id="table-panel" hidden>
+          <div class="table-wrap"><table><thead><tr><th>ID</th><th>Data</th><th>Hora</th><th>Valor</th><th>Unidade</th><th>Sensor</th></tr></thead><tbody id="rows"></tbody></table></div>
+          <p class="hint">Exibindo as últimas 500 amostras. A exportação inclui toda a coleta.</p>
+        </div>
+      </section>
+
+      <p id="message" role="status" aria-live="polite">Conecte a placa, configure o sensor e inicie a coleta. O restante é automático.</p>
+    </article>
+  </main>
+
+  <footer><span>Análise de Variáveis Experimentais</span><small>Conexão automática · gráficos interativos</small></footer>
+
+  <div id="firmware-modal" class="modal" hidden>
+    <div class="modal-backdrop" data-close-firmware></div>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="firmware-modal-title">
+      <button class="modal-close" data-close-firmware aria-label="Fechar">×</button>
+      <div class="update-icon">⇧</div>
+      <p class="eyebrow">ATUALIZAÇÃO DA PLACA</p>
+      <h2 id="firmware-modal-title">Atualizar Arduino Uno</h2>
+      <p class="modal-copy">A versão da placa não foi reconhecida ou não corresponde ao firmware preparado para este software. A atualização pode ser iniciada por esta janela e usa automaticamente o arquivo <strong>.hex</strong> da pasta <strong>firmware</strong>.</p>
+      <div class="version-compare">
+        <div><span>Detectado</span><strong id="firmware-current">—</strong></div>
+        <b>→</b>
+        <div><span>Necessário</span><strong id="firmware-required">—</strong></div>
+      </div>
+      <div class="tool-status" id="updater-status">Verificando ferramenta de gravação…</div>
+      <div class="bundled-firmware"><span class="mini-label">PASTA FIRMWARE / ARQUIVO .HEX</span><strong id="bundled-firmware-name">firmware/firm_keystudio.ino.hex</strong></div>
+      <div class="modal-actions"><button data-close-firmware>Agora não</button><button id="flash-firmware" class="primary" disabled>Iniciar atualização</button></div>
+      <pre id="flash-log" hidden></pre>
+      <p class="modal-foot">Durante a atualização, mantenha o Arduino Uno conectado ao USB. Ao reconhecer a versão correta, o software retorna automaticamente para a tela principal.</p>
+    </section>
+  </div>
+</body>
+</html>

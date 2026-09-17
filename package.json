@@ -1,0 +1,25 @@
+{
+  "name": "analise-variaveis-experimentais",
+  "version": "1.16.5",
+  "description": "Análise de Variáveis Experimentais - aquisição serial, atualização de firmware e atualização online do aplicativo",
+  "author": "Cittius / Modulab",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "test": "node --test test/*.test.js",
+    "test:smoke": "electron . --smoke-test",
+    "pack": "electron-builder --config build/electron-builder.config.cjs --dir",
+    "build:win": "electron-builder --config build/electron-builder.config.cjs --win nsis --x64 -c.directories.output=dist/windows",
+    "build:linux": "electron-builder --config build/electron-builder.config.cjs --linux AppImage --x64 -c.directories.output=dist/linux"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9",
+    "serialport": "13.0.0"
+  },
+  "devDependencies": {
+    "electron": "44.4.1",
+    "electron-builder": "^26.0.0"
+  }
+}
