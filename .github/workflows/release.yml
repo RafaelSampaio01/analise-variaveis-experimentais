@@ -1,0 +1,283 @@
+name: Build e Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GITHUB_OWNER: RafaelSampaio01
+  GITHUB_REPO: analise-variaveis-experimentais
+
+jobs:
+  validar:
+    name: Validar versao e testes
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Conferir tag x package.json
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+
+          echo "Tag:     $TAG_VERSION"
+          echo "Package: $PACKAGE_VERSION"
+
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "::error::A tag v$TAG_VERSION nao corresponde ao package.json $PACKAGE_VERSION"
+            exit 1
+          fi
+
+      - name: Verificar package-lock.json
+        shell: bash
+        run: |
+          if [ ! -f package-lock.json ]; then
+            echo "::error::package-lock.json nao foi encontrado. Execute npm install localmente e envie o package-lock.json ao Git."
+            exit 1
+          fi
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Executar testes
+        run: npm test
+
+  windows:
+    name: Gerar Windows
+    needs: validar
+    runs-on: windows-latest
+
+    steps:
+      - name: Baixar codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Validar icone Windows
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "build/icon.ico")) {
+            throw "build/icon.ico nao encontrado."
+          }
+
+      - name: Gerar instalador Windows
+        run: npm run build:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Validar arquivos de atualizacao Windows
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          $exe = "dist/windows/Analise-Variaveis-Experimentais-Setup-$version-x64.exe"
+          $blockmap = "$exe.blockmap"
+          $latest = "dist/windows/latest.yml"
+
+          if (-not (Test-Path $exe)) {
+            throw "Instalador nao encontrado: $exe"
+          }
+
+          if (-not (Test-Path $blockmap)) {
+            throw "Blockmap nao encontrado: $blockmap"
+          }
+
+          if (-not (Test-Path $latest)) {
+            throw "latest.yml nao foi gerado. A release foi bloqueada para evitar quebrar a atualizacao online."
+          }
+
+          $content = Get-Content $latest -Raw
+          if ($content -notmatch "(?m)^version:\s*['""]?$([regex]::Escape($version))['""]?\s*$") {
+            throw "latest.yml nao corresponde a versao $version."
+          }
+
+          Write-Host "OK - instalador: $exe"
+          Write-Host "OK - blockmap:  $blockmap"
+          Write-Host "OK - metadata:  $latest"
+
+      - name: Guardar artefatos Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            dist/windows/Analise-Variaveis-Experimentais-Setup-*.exe
+            dist/windows/Analise-Variaveis-Experimentais-Setup-*.exe.blockmap
+            dist/windows/latest.yml
+
+  linux:
+    name: Gerar Linux
+    needs: validar
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Verificar icone Linux
+        id: linux_icon
+        shell: bash
+        run: |
+          if [ -f build/icon.png ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "build/icon.png encontrado."
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::build/icon.png nao encontrado. O build Linux sera ignorado."
+          fi
+
+      - name: Gerar AppImage Linux
+        id: linux_build
+        if: steps.linux_icon.outputs.ready == 'true'
+        continue-on-error: true
+        run: npm run build:linux
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Validar arquivos Linux
+        if: steps.linux_build.outcome == 'success'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          if ! ls dist/linux/*"$VERSION"*.AppImage >/dev/null 2>&1; then
+            echo "::error::AppImage da versao $VERSION nao encontrado."
+            exit 1
+          fi
+
+          if [ ! -f dist/linux/latest-linux.yml ]; then
+            echo "::error::latest-linux.yml nao foi gerado."
+            exit 1
+          fi
+
+      - name: Guardar artefatos Linux
+        if: steps.linux_build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            dist/linux/*.AppImage
+            dist/linux/*.AppImage.blockmap
+            dist/linux/latest-linux.yml
+
+  release:
+    name: Publicar GitHub Release
+    needs:
+      - validar
+      - windows
+      - linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar artefatos de build
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Listar arquivos que serao publicados
+        shell: bash
+        run: |
+          echo "Arquivos recebidos:"
+          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
+
+      - name: Validacao final da Release
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          EXE="release-assets/Analise-Variaveis-Experimentais-Setup-${VERSION}-x64.exe"
+          BLOCKMAP="${EXE}.blockmap"
+          LATEST="release-assets/latest.yml"
+
+          test -f "$EXE" || {
+            echo "::error::EXE da versao $VERSION ausente."
+            exit 1
+          }
+
+          test -f "$BLOCKMAP" || {
+            echo "::error::Blockmap da versao $VERSION ausente."
+            exit 1
+          }
+
+          test -f "$LATEST" || {
+            echo "::error::latest.yml ausente. Release cancelada."
+            exit 1
+          }
+
+          grep -Eq "^version:[[:space:]]*['\"]?${VERSION}['\"]?[[:space:]]*$" "$LATEST" || {
+            echo "::error::latest.yml nao corresponde a versao $VERSION."
+            cat "$LATEST"
+            exit 1
+          }
+
+          echo "Release validada para v$VERSION."
+
+      - name: Criar ou atualizar GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          REPO="${GITHUB_REPOSITORY}"
+
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG ja existe. Atualizando arquivos..."
+            gh release upload "$TAG" release-assets/* --repo "$REPO" --clobber
+          else
+            echo "Criando Release $TAG..."
+            gh release create "$TAG" release-assets/* \
+              --repo "$REPO" \
+              --verify-tag \
+              --title "Análise de Variáveis Experimentais $TAG" \
+              --generate-notes
+          fi
+
+      - name: Conferir assets publicados
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          REPO="${GITHUB_REPOSITORY}"
+          VERSION="${TAG#v}"
+
+          gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' | sort | tee assets.txt
+
+          grep -Fx "Analise-Variaveis-Experimentais-Setup-${VERSION}-x64.exe" assets.txt
+          grep -Fx "Analise-Variaveis-Experimentais-Setup-${VERSION}-x64.exe.blockmap" assets.txt
+          grep -Fx "latest.yml" assets.txt
+
+          echo "Release $TAG publicada e conferida com sucesso."
