@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: |
           if [ ! -f package-lock.json ]; then
-            echo "::error::package-lock.json nao foi encontrado. Execute npm install localmente e envie o package-lock.json ao Git."
+            echo "::error::package-lock.json nao foi encontrado."
             exit 1
           fi
 
@@ -83,7 +83,8 @@ jobs:
           }
 
       - name: Gerar instalador Windows
-        run: npm run build:win
+        shell: pwsh
+        run: npm run build:win -- --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
@@ -104,7 +105,7 @@ jobs:
           }
 
           if (-not (Test-Path $latest)) {
-            throw "latest.yml nao foi gerado. A release foi bloqueada para evitar quebrar a atualizacao online."
+            throw "latest.yml nao foi gerado. Release bloqueada."
           }
 
           $content = Get-Content $latest -Raw
@@ -160,7 +161,7 @@ jobs:
         id: linux_build
         if: steps.linux_icon.outputs.ready == 'true'
         continue-on-error: true
-        run: npm run build:linux
+        run: npm run build:linux -- --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
@@ -201,20 +202,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar artefatos de build
+      - name: Baixar artefatos
         uses: actions/download-artifact@v4
         with:
           pattern: release-*
           path: release-assets
           merge-multiple: true
 
-      - name: Listar arquivos que serao publicados
+      - name: Listar arquivos
         shell: bash
         run: |
-          echo "Arquivos recebidos:"
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
 
-      - name: Validacao final da Release
+      - name: Validacao final
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
@@ -222,28 +222,15 @@ jobs:
           BLOCKMAP="${EXE}.blockmap"
           LATEST="release-assets/latest.yml"
 
-          test -f "$EXE" || {
-            echo "::error::EXE da versao $VERSION ausente."
-            exit 1
-          }
-
-          test -f "$BLOCKMAP" || {
-            echo "::error::Blockmap da versao $VERSION ausente."
-            exit 1
-          }
-
-          test -f "$LATEST" || {
-            echo "::error::latest.yml ausente. Release cancelada."
-            exit 1
-          }
+          test -f "$EXE" || { echo "::error::EXE ausente."; exit 1; }
+          test -f "$BLOCKMAP" || { echo "::error::Blockmap ausente."; exit 1; }
+          test -f "$LATEST" || { echo "::error::latest.yml ausente."; exit 1; }
 
           grep -Eq "^version:[[:space:]]*['\"]?${VERSION}['\"]?[[:space:]]*$" "$LATEST" || {
             echo "::error::latest.yml nao corresponde a versao $VERSION."
             cat "$LATEST"
             exit 1
           }
-
-          echo "Release validada para v$VERSION."
 
       - name: Criar ou atualizar GitHub Release
         shell: bash
@@ -254,10 +241,8 @@ jobs:
           REPO="${GITHUB_REPOSITORY}"
 
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            echo "Release $TAG ja existe. Atualizando arquivos..."
             gh release upload "$TAG" release-assets/* --repo "$REPO" --clobber
           else
-            echo "Criando Release $TAG..."
             gh release create "$TAG" release-assets/* \
               --repo "$REPO" \
               --verify-tag \
@@ -279,5 +264,3 @@ jobs:
           grep -Fx "Analise-Variaveis-Experimentais-Setup-${VERSION}-x64.exe" assets.txt
           grep -Fx "Analise-Variaveis-Experimentais-Setup-${VERSION}-x64.exe.blockmap" assets.txt
           grep -Fx "latest.yml" assets.txt
-
-          echo "Release $TAG publicada e conferida com sucesso."
