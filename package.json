@@ -1,6 +1,6 @@
 {
   "name": "analise-variaveis-experimentais",
-  "version": "1.16.5",
+  "version": "1.16.6",
   "description": "Análise de Variáveis Experimentais - aquisição serial, atualização de firmware e atualização online do aplicativo",
   "author": "Cittius / Modulab",
   "private": true,
