@@ -1,0 +1,101 @@
+name: Publicar Linux
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    name: Build e publicação Linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Ler versão do package.json
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Versão: $VERSION"
+
+      - name: Verificar ícone Linux
+        shell: bash
+        run: |
+          test -f build/icon.png || {
+            echo "ERRO: build/icon.png não encontrado."
+            exit 1
+          }
+
+      - name: Gerar AppImage Linux
+        shell: bash
+        run: |
+          npx electron-builder \
+            --config build/electron-builder.config.cjs \
+            --linux AppImage \
+            --x64 \
+            -c.directories.output=dist/linux \
+            --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Criar release se ainda não existir
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "Análise de Variáveis Experimentais $VERSION" \
+              --generate-notes
+          fi
+
+      - name: Publicar arquivos Linux
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          shopt -s nullglob
+
+          files=(
+            dist/linux/*.AppImage
+            dist/linux/*.blockmap
+            dist/linux/latest-linux.yml
+          )
+
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "ERRO: nenhum artefato Linux encontrado em dist/linux."
+            exit 1
+          fi
+
+          for file in "${files[@]}"; do
+            echo "Enviando $(basename "$file")"
+            gh release upload "$TAG" "$file" --clobber
+          done
+
+      - name: Resumo
+        shell: bash
+        run: |
+          echo "Linux publicado separadamente."
+          echo "Tag: ${{ steps.version.outputs.tag }}"

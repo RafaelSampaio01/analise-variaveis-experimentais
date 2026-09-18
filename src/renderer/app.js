@@ -10,7 +10,7 @@ let rows = [];
 let series = [];
 let view = 'live';
 let pending = false;
-let requiredFirmware = 'V03/4';
+let requiredFirmware = 'V03/5';
 let updaterReady = false;
 let bundledFirmwareReady = false;
 let lastFirmwarePrompt = '';
@@ -155,10 +155,16 @@ function safeOutput(input) {
   return ['D9', 'D8', 'D7', 'D6', 'D5'].find(port => port !== input) || 'D9';
 }
 
-function passiveReference(sensor) {
-  if (sensor.id >= 7) return 2;
-  if (sensor.id === 2) return 2000;
-  return 100;
+function defaultReference(sensor) {
+  if (!sensor) return 0;
+  if (Number.isFinite(Number(sensor.defaultReference))) return Number(sensor.defaultReference);
+  return sensor.id >= 7 ? 1 : 100;
+}
+
+function defaultComparison(sensor) {
+  if (!sensor) return 2;
+  if (Number.isInteger(Number(sensor.defaultComparison))) return Number(sensor.defaultComparison);
+  return sensor.id >= 7 ? 1 : 2;
 }
 
 function buildExperiments() {
@@ -170,13 +176,13 @@ function buildExperiments() {
       id: 'manual-pot-led',
       label: 'Potenciômetro + LED · exemplo do manual',
       title: 'Potenciômetro rotativo com LED',
-      description: 'Exemplo do manual: potenciômetro em A0, referência de 3 V, condição maior que e LED em D5 com estado normal desligado.',
+      description: 'Potenciômetro em A0, referência de 500 ADC, condição maior ou igual e LED em D5 com estado normal desligado.',
       portLabel: 'A0 → D5',
       config: {
         sensor: potentiometer.id,
         input: 'A0',
-        comparison: 2,
-        reference: 3,
+        comparison: 4,
+        reference: 500,
         actuator: 0,
         output: 'D5',
         level: 0
@@ -196,8 +202,8 @@ function buildExperiments() {
       config: {
         sensor: firstSensor.id,
         input,
-        comparison: 2,
-        reference: firstSensor.id >= 7 ? 1 : 3,
+        comparison: defaultComparison(firstSensor),
+        reference: defaultReference(firstSensor),
         actuator: 0,
         output: safeOutput(input),
         level: 0
@@ -217,8 +223,8 @@ function buildExperiments() {
       config: {
         sensor: sensor.id,
         input,
-        comparison: 2,
-        reference: passiveReference(sensor),
+        comparison: defaultComparison(sensor),
+        reference: defaultReference(sensor),
         actuator: 0,
         output: safeOutput(input),
         level: 0
@@ -260,16 +266,26 @@ function updateSensorNote() {
   const sensor = selectedSensor();
   if (!sensor) return;
   if (sensor.id === 14) {
-    $('sensor-note').textContent = 'Sensor de chama: o protocolo original usa A6/A7 como entrada digital. Confirme a compatibilidade do Arduino utilizado.';
+    $('sensor-note').textContent = 'Sensor de chama V03/5: entrada fixa A6. O firmware lê o ADC6 e converte o sinal para 0 ou 1.';
+  } else if (sensor.id === 5) {
+    $('sensor-note').textContent = 'Potenciômetro rotativo: leitura analógica ADC de 0 a 1023. Padrão: maior ou igual a 500.';
+  } else if (sensor.id === 3) {
+    $('sensor-note').textContent = 'Sensor de nível da água: leitura analógica ADC de 0 a 1023.';
   } else if (sensor.id === 1) {
-    $('sensor-note').textContent = 'Sensor de som: a escala do firmware original é preservada. A referência é enviada conforme a escala esperada pelo protocolo.';
+    $('sensor-note').textContent = 'Sensor de som: a escala histórica do protocolo é preservada. Referência padrão: 1.';
   } else {
     $('sensor-note').textContent = `Referência em ${sensor.unit || '0 / 1'}. Quando a condição é verdadeira, o firmware inverte o estado normal configurado para a saída.`;
   }
 }
 
 function comparisonLabel(value) {
-  return ({ 0: 'menor que', 1: 'igual a', 2: 'maior que' })[Number(value)] || 'comparado com';
+  return ({
+    0: 'menor que',
+    1: 'igual a',
+    2: 'maior que',
+    3: 'menor ou igual a',
+    4: 'maior ou igual a'
+  })[Number(value)] || 'comparado com';
 }
 
 function actuatorLabel(value) {
@@ -913,9 +929,18 @@ $('app-update-button').onclick = handleAppUpdateClick;
 
 $('experiment').onchange = renderExperiment;
 $('sensor').onchange = () => {
+  const sensor = selectedSensor();
   updateInputOptions();
+
+  if (sensor) {
+    $('comparison').value = String(defaultComparison(sensor));
+    $('reference').value = String(defaultReference(sensor));
+  }
+
   configuredConfigKey = null;
   $('config-progress').value = 0;
+  updateSensorNote();
+  updateConditionSummary();
 };
 $('input').onchange = () => {
   updateOutputOptions();

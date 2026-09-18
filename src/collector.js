@@ -66,6 +66,35 @@ class Collector extends EventEmitter {
     });
   }
 
+  isValidSerialPath(port) {
+    const serialPath = String(port?.path || '');
+
+    // Windows: portas seriais tradicionais (COM3, COM34, ...).
+    if (process.platform === 'win32') {
+      return /^COM\d+$/i.test(serialPath);
+    }
+
+    // Linux/WSL: dispositivos USB CDC/ACM e conversores USB-seriais.
+    // Ignora /dev/ttyS0, /dev/ttyS1... do WSL, que não são a coletora USB.
+    if (process.platform === 'linux') {
+      return (
+        /^\/dev\/ttyACM\d+$/i.test(serialPath) ||
+        /^\/dev\/ttyUSB\d+$/i.test(serialPath)
+      );
+    }
+
+    // macOS: portas seriais USB normalmente aparecem em /dev/cu.* ou /dev/tty.*.
+    if (process.platform === 'darwin') {
+      return (
+        serialPath.startsWith('/dev/cu.') ||
+        serialPath.startsWith('/dev/tty.')
+      );
+    }
+
+    // Em plataformas desconhecidas, não bloqueia a enumeração.
+    return Boolean(serialPath);
+  }
+
   candidateScore(port) {
     const text = [
       port.manufacturer,
@@ -91,6 +120,14 @@ class Collector extends EventEmitter {
     if (vid === '0403') score += 70;                 // FTDI
     if (vid === '067b') score += 60;                 // Prolific
     if (port.vendorId) score += 20;
+    // Prioriza caminhos seriais típicos de cada sistema operacional.
+    // Isso ajuda inclusive quando o driver não informa fabricante/VID/PID.
+    const serialPath = String(port.path || '');
+    if (/^COM\d+$/i.test(serialPath)) score += 20;
+    if (/^\/dev\/ttyACM\d+$/i.test(serialPath)) score += 50;
+    if (/^\/dev\/ttyUSB\d+$/i.test(serialPath)) score += 40;
+    if (/^\/dev\/(cu|tty)\./i.test(serialPath)) score += 30;
+
     if (/bluetooth/.test(text)) score -= 200;
     void pid;
     return score;
@@ -109,14 +146,22 @@ class Collector extends EventEmitter {
     }
 
     ports = ports
-      .filter(port => !/bluetooth/i.test([port.manufacturer, port.friendlyName, port.pnpId, port.path].filter(Boolean).join(' ')))
+      // No Linux/WSL, remove /dev/ttyS* e mantém apenas portas USB seriais
+      // (/dev/ttyACM* e /dev/ttyUSB*). No Windows mantém COM*.
+      .filter(port => this.isValidSerialPath(port))
+      .filter(port => !/bluetooth/i.test([
+        port.manufacturer,
+        port.friendlyName,
+        port.pnpId,
+        port.path
+      ].filter(Boolean).join(' ')))
       .map(port => ({ ...port, _score: this.candidateScore(port) }))
       .sort((a, b) => b._score - a._score);
 
     for (const port of ports) {
-      // V03/4 trabalha em 115200. Se o USB for claramente um Arduino/USB-Serial,
+      // V03/5 trabalha em 115200. Se o USB for claramente um Arduino/USB-Serial,
       // a porta permanece aberta mesmo quando outro firmware não entende #REQUI.
-      // Isso permite abrir o atualizador automaticamente usando a COM detectada.
+      // Isso permite abrir o atualizador automaticamente usando a porta serial detectada.
       const likelyHardware = port._score >= 70;
       if (!likelyHardware && port._score < 20) continue;
 
@@ -406,15 +451,31 @@ class Collector extends EventEmitter {
       this.timer = setInterval(() => {
         const id = this.config.sensor;
         const wave = Math.sin(this.rows.length / 8);
-        const value = id >= 7 || id === 3
-          ? Number(wave > 0)
-          : id === 5
-            ? 2.5 + wave
-            : id === 1
-              ? 5 + wave * 2
-              : id === 2
-                ? 500 + wave * 200
-                : 25 + wave * 5;
+        let value;
+
+        if (id >= 7) {
+          // Sensores digitais: 0 ou 1.
+          value = Number(wave > 0);
+        } else if (id === 2) {
+          // LDR em ADC.
+          value = 500 + wave * 200;
+        } else if (id === 3) {
+          // Nível de água em ADC.
+          value = 520 + wave * 260;
+        } else if (id === 5) {
+          // Potenciômetro V03/5 em ADC bruto.
+          value = 512 + wave * 450;
+        } else if (id === 1) {
+          // Som mantém a escala histórica do protocolo (x100).
+          value = 5 + wave * 2;
+        } else if (id === 4) {
+          // Umidade em percentual.
+          value = 50 + wave * 25;
+        } else {
+          // Temperaturas.
+          value = 25 + wave * 5;
+        }
+
         this.sample(Math.round(value * sensors[id].scale));
       }, 20);
     } else {

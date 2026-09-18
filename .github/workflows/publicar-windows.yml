@@ -1,0 +1,91 @@
+name: Publicar Windows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build e publicação Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Ler versão do package.json
+        id: version
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Versão: $version"
+
+      - name: Gerar instalador Windows
+        shell: pwsh
+        run: |
+          npx electron-builder `
+            --config build/electron-builder.config.cjs `
+            --win nsis `
+            --x64 `
+            -c.directories.output=dist/windows `
+            --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Criar release se ainda não existir
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release view $env:TAG 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:TAG `
+              --target $env:GITHUB_SHA `
+              --title "Análise de Variáveis Experimentais $env:VERSION" `
+              --generate-notes
+          }
+
+      - name: Publicar arquivos Windows
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          $files = Get-ChildItem "dist/windows" -File | Where-Object {
+            $_.Name -match '\.exe$' -or
+            $_.Name -match '\.blockmap$' -or
+            $_.Name -eq 'latest.yml'
+          }
+
+          if (-not $files) {
+            throw "Nenhum artefato Windows encontrado em dist/windows."
+          }
+
+          foreach ($file in $files) {
+            Write-Host "Enviando $($file.Name)"
+            gh release upload $env:TAG $file.FullName --clobber
+          }
+
+      - name: Resumo
+        shell: pwsh
+        run: |
+          Write-Host "Windows publicado separadamente."
+          Write-Host "Tag: ${{ steps.version.outputs.tag }}"

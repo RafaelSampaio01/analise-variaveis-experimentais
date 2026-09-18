@@ -19,8 +19,8 @@ async function waitFor(predicate, { timeout = 2000, interval = 20 } = {}) {
 test('fragmented frames, concatenation, negative values and resynchronization', () => {
   const parser = new FrameParser();
   assert.deepEqual(parser.push('noise#O'), []);
-  assert.deepEqual(parser.push('K.#VV03/4V.#STD11.#D-0250.#broken#D00100.'), [
-    { type: 'ack' }, { type: 'version', version: 'V03/4' }, { type: 'status', healthy: true, configured: true }, { type: 'data', raw: -250 }, { type: 'data', raw: 100 }
+  assert.deepEqual(parser.push('K.#VV03/5V.#STD11.#D-0250.#broken#D00100.'), [
+    { type: 'ack' }, { type: 'version', version: 'V03/5' }, { type: 'status', healthy: true, configured: true }, { type: 'data', raw: -250 }, { type: 'data', raw: 100 }
   ]);
   assert.deepEqual(parser.push('#DNaN.#STD99.'), []);
   parser.push('#' + 'x'.repeat(1000)); assert.equal(parser.buffer, '');
@@ -28,7 +28,12 @@ test('fragmented frames, concatenation, negative values and resynchronization', 
 test('all seven firmware commands retain legacy scaling and port format', () => {
   assert.deepEqual(configurationCommands(config), ['#CP10.\n', '#CP2A0.\n', '#CP32.\n', '#CP42550.\n', '#CP50.\n', '#CP6D5.\n', '#CP70.\n']);
   assert.equal(configurationCommands({ ...config, sensor: 2, reference: 512 })[3], '#CP4512.\n');
-  assert.equal(configurationCommands({ ...config, sensor: 14, input: 'A6/A7' })[1], '#CP2A6/A7.\n');
+  assert.equal(configurationCommands({ ...config, sensor: 3, reference: 700 })[3], '#CP4700.\n');
+  assert.equal(configurationCommands({ ...config, sensor: 5, reference: 500, comparison: 4 })[3], '#CP4500.\n');
+  assert.equal(configurationCommands({ ...config, sensor: 5, reference: 500, comparison: 4 })[2], '#CP34.\n');
+  assert.equal(configurationCommands({ ...config, sensor: 4, reference: 50, comparison: 3 })[2], '#CP33.\n');
+  assert.equal(configurationCommands({ ...config, sensor: 14, input: 'A6' })[1], '#CP2A6.\n');
+  assert.equal(configurationCommands({ ...config, sensor: 15, input: 'D7' })[0], '#CP115.\n');
   for (const change of [{ reference: '' }, { reference: 'NaN' }, { reference: 1000 }, { sensor: 99 }, { sensor: 7, input: 'D5', output: 'D5' }, { input: 'A0.\n#PLAY_' }]) assert.throws(() => configurationCommands({ ...config, ...change }));
 });
 test('CSV roundtrip: decimal comma, BOM, quotes, multiline and old repeated headers', () => {
@@ -48,7 +53,7 @@ class FakePort extends EventEmitter {
       if (command.startsWith('#CP7')) this.configured = true;
       setImmediate(() => this.emit('data', Buffer.from('#OK.')));
     }
-    if (command === '#REQUI.\n') setImmediate(() => this.emit('data', Buffer.from(this.configured ? '#VV03/4V.#STD11.' : '#VV03/4V.#STD10.')));
+    if (command === '#REQUI.\n') setImmediate(() => this.emit('data', Buffer.from(this.configured ? '#VV03/5V.#STD11.' : '#VV03/5V.#STD10.')));
   }
   drain(cb) { cb(); }
   close(cb) { this.isOpen = false; this.emit('close'); cb(); }
